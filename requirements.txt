@@ -1,0 +1,5 @@
+inquirer
+termcolor
+requests
+ruamel.yaml
+pytz
