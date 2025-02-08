@@ -8,118 +8,29 @@
 #        cover - delete records
 #        fix - fix existing time records
 #        init - set up timely with defaults
+#        show - view records
 #        list - list hours
 #        log - log time with presets
 ################################################################################
 
+from datetime import datetime, timedelta
 import os
 import argparse
-from datetime import datetime, timedelta
-from ruamel.yaml import YAML
+import calendar
+from graphics import curses_cal
+from config import BEARER_TOKEN,HEADERS,init
 from termcolor import cprint
-import inquirer
 import pytz
 import requests
 
-BEARER_TOKEN = ''
-HEADERS = {
-    "Authorization": f"{BEARER_TOKEN}",
-    "Version": None,
-    "Accept": "application/json",
-    "Content-Type": "application/json",
-    "Cookie": "", # Has to be empty
-    "User-Agent": None,
-    "Origin": None,
-    "Referer": None,
-    "Connection": None,
-    "Content-Length": None,
-    "Accept-Encoding": None
-}
 # https://api.timelyapp.com/1.1/accounts Array of Accounts
 # https://api.timelyapp.com/1.1/${accountId}/users/current Current User
 # https://api.timelyapp.com/1.1/${accountId}/labels Tags
 # https://api.timelyapp.com/${accountId}/hours POST only hours
+# https://app.timelyapp.com/${accountId}/hours.json?projects_version=3&since=2024-01-01&upto=2025-02-02&user_id=${userId} GET Hours
 
-timely_dir = os.path.expanduser("~/.timely")
-bearer_file = os.path.join(timely_dir, "bearer")
-config_file = os.path.join(timely_dir, "config")
-
-def init():
-    # Check if ~/.timely exists, if not, create it
-    if not os.path.exists(timely_dir):
-        print("Creating ~/.timely directory...")
-        os.makedirs(timely_dir)
-
-    # Check if the bearer file exists
-    if not os.path.exists(bearer_file):
-        print("Bearer file not found.")
-        token = input("Please enter your Bearer token: ")
-
-        # Save the Bearer token to the ~/.timely/bearer file
-        with open(bearer_file, "w") as f:
-            f.write(token)
-        print(f"Bearer token saved to {bearer_file}")
-
-    # Read the bearer token and update HEADERS
-    if os.path.exists(bearer_file):
-        with open(bearer_file, "r") as f:
-            BEARER_TOKEN = f.read().strip()
-            HEADERS["Authorization"] = BEARER_TOKEN
-
-    # Check if the config file exists, if not, create it
-    if not os.path.exists(config_file):
-        cprint("[!] Config file not found.", "green")
-        with open(bearer_file, 'r') as file:
-            token = file.read().replace('\n', '')
-        orgs = requests.get(
-            "https://api.timelyapp.com/1.1/accounts",
-            headers=HEADERS,
-            timeout=10
-        ).json()
-
-        org_names = [ org["name"] for org in orgs ]
-        org_ids = [ org["id"] for org in orgs ]
-        query = [inquirer.List(
-            "org",
-            message="Your Organisation:",
-            choices=org_names,
-        )]
-        org_name = inquirer.prompt(query)["org"]
-        org_id = org_ids[org_names.index(org_name)]
-        user = requests.get(
-            "https://api.timelyapp.com/1.1/{}/users/current".format(org_id), 
-            headers=HEADERS,
-            timeout=10
-        ).json()
-
-        config = {
-            "user": {
-                "email": user["email"],
-                "id": user["id"],
-                "weeklyCapacity": user["weekly_capacity"]
-            },
-            "org":{
-                "name": org_name,
-                "id": org_id
-            },
-        }
-        with open(config_file, "w") as f:
-            yaml = YAML(typ='unsafe')
-            yaml.default_flow_style = False
-            yaml.dump(config, f)
-        print(f"Config file created at {config_file}")
-        return config
-
-     # Load the YAML config file
-    if os.path.exists(config_file):
-        with open(config_file, "r") as f:
-            print("IM LOADING!")
-            yaml = YAML(typ='unsafe')
-            yaml.default_flow_style = False
-            config = yaml.load(f)
-            return config
-
-
+# Example tracking data (Day: Hours Tracked)
+tracking_data = {1: 8, 2: 4, 3: 6, 5: 1, 8: 7, 12: 3, 15: 2, 18: 0, 20: 5}
 
 def get_me():
     response = requests.get(
@@ -138,6 +49,7 @@ def recurseprint(json, name, field, i):
 
 
 def get_labels():
+    # TODO: Prettify output
     labels = requests.get(
         "https://api.timelyapp.com/1.1/{}/labels".format(config["org"]["id"]), 
         headers=HEADERS,
@@ -147,6 +59,7 @@ def get_labels():
         recurseprint(item, "name", "children", 0)
 
 def log_time(note, duration, date_iso):
+    # TODO: Add time support (From/To)
     dt = datetime.strptime(date_iso, "%Y-%m-%d")
     dt_start = dt.replace(
         hour=config["prefs"]["staringHour"],
@@ -214,13 +127,52 @@ def log_time(note, duration, date_iso):
         print(f'Status code: {response.status_code}')
         print(response.content)
 
+def show_time(iso_from, iso_to):
+    """
+    api returns 
+        .[day].day - ISO day str
+        .[day].duration.hours - int hours
+        .[day].duration.minutes - int minutes
+        .[day].duration.seconds - int seconds
+        .[day].note - str note
+        .[day].id - int record ID
+        .[day].sequence - int index, when multiple records per day
+        .[day].from - day in format 2025-01-01T12:00:00+02:00"
+        .[day].to - day in format 2025-01-01T12:00:00+02:00"
+    """
+    response = requests.get(
+        "https://app.timelyapp.com/{}/hours.json".format(config["org"]["id"]),
+        params={
+            "projects_version": 3,
+            "since": iso_from,
+            "upto": iso_to,
+            "user_id": config["user"]["id"]
+        },
+        headers=HEADERS,
+        timeout=10
+    )
+    if response.status_code == 200:
+        # TODO: Prepare data for calendar
+        # TODO: Make calendar print data properly
+        curses.wrapper(curses_cal)
+    else:
+        cprint('Error during request, see content below', "red")
+        print(f'Status code: {response.status_code}')
+        print(response.request.url)
+        print(response.request.body)
+        print(response.request.headers)
+        print(response.content)
+
+
 config = init()
 
 parser = argparse.ArgumentParser(description="Timely CLI")
-parser.add_argument("action", choices=["me", "log", "list", "fix", "cover", "tags", "config"])
+parser.add_argument("action", choices=["me", "log", "list", "fix", "cover", "tags", "config", "show"])
 parser.add_argument("--note", help="Log note", default="")
 parser.add_argument("--duration", help="Duration in h(ours) or m(minutes)", default="6h")
 parser.add_argument("--day", help="Day in ISO format (2024-12-31)", default="")
+parser.add_argument("--iso-from", help="Day in ISO format, from which show hours", default="")
+parser.add_argument("--iso-to", help="Day in ISO format, to which show hours", default="")
 
 args = parser.parse_args()
 unit = args.duration[-1]
@@ -233,3 +185,5 @@ elif args.action == "log":
     log_time(args.note, amount, args.day)
 elif args.action == "tags":
     get_labels()
+elif args.action == "show":
+    show_time(args.iso_from, args.iso_to)
