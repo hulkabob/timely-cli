@@ -1,36 +1,50 @@
 #!/bin/env python
-# vim: set ft=python ts=2
 
+"""
+Interface timely api sneakily.
+
+ dMMMMMMP dMP dMMMMMMMMb dMMMMMP dMP    dMP dMP 
+   dMP   amr dMP"dMP"dMPdMP     dMP    dMP.dMP  
+  dMP   dMP dMP dMP dMPdMMMP   dMP     VMMMMP   
+ dMP   dMP dMP dMP dMPdMP     dMP    dA .dMP    
+dMP   dMP dMP dMP dMPdMMMMMP dMMMMMP VMMMP"  
+"""
+# vim: set ft=python ts=2
 ################################################################################
 # Planned features:
 # timely me - get current user
-#        config - set defaults
 #        cover - delete records
 #        fix - fix existing time records
 #        init - set up timely with defaults
 #        show - view records
-#        list - list hours
 #        log - log time with presets
+# Unplanned features:
+#        projects - list projects
+#        tags - list tags
+#        ping - check token
+#        --plain - print without interactive features
+#        --json - print outputs in JSON
 ################################################################################
 
-from datetime import datetime, timedelta
-import os
+from datetime import datetime
+from zoneinfo import ZoneInfo
 import argparse
-import calendar
-from graphics import curses_cal
-from config import BEARER_TOKEN,HEADERS,init
+import curses
+import sys
 from termcolor import cprint
-import pytz
 import requests
+from graphics import curses_cal
+from utils import parse_duration
+from config import HEADERS,init,get_projects,get_tags
 
 # https://api.timelyapp.com/1.1/accounts Array of Accounts
 # https://api.timelyapp.com/1.1/${accountId}/users/current Current User
 # https://api.timelyapp.com/1.1/${accountId}/labels Tags
+# ~https://api.timelyapp.com/1.1/${accountId}/projects Projects~ Sucks.
 # https://api.timelyapp.com/${accountId}/hours POST only hours
 # https://app.timelyapp.com/${accountId}/hours.json?projects_version=3&since=2024-01-01&upto=2025-02-02&user_id=${userId} GET Hours
-
-# Example tracking data (Day: Hours Tracked)
-tracking_data = {1: 8, 2: 4, 3: 6, 5: 1, 8: 7, 12: 3, 15: 2, 18: 0, 20: 5}
+# https://app.timelyapp.com/${accountId}/labels.json?filter=all&limit=500&offset=0 Tags
+# https://app.timelyapp.com/${accountId}/projects.json?filter=active&limit=1000&offset=0&totals=false&version=3 Projects
 
 def get_me():
     response = requests.get(
@@ -40,37 +54,42 @@ def get_me():
     )
     print(response.json())
 
-def recurseprint(json, name, field, i):
-    if len(json) != 0:
-        for each in json[field]:
-            recurseprint(each[field], name, field, i+1)
-            print(each)
-    return
+
+def log_time(note, duration, date_iso, time_from=None, time_to=None):
+    dt = datetime.strptime(date_iso, "%Y-%m-%d").replace(tzinfo=ZoneInfo(config["user"]["timezone"]))
+
+    if duration is not None:
+        td_duration = parse_duration(duration)
+    else:
+        td_duration = None
+
+    if time_from is None:
+        starting_time = datetime.strptime(config["prefs"]["staringTime"], "%H:%M").time()
+        dt_start = dt.replace(
+            hour=starting_time.hour,
+            minute=starting_time.minute,
+            second=0,
+            microsecond=0)
+    else:
+        dt_start = datetime.combine(dt,
+                                    datetime.strptime(time_from, "%H:%M").time(),
+                                    tzinfo=ZoneInfo(config["user"]["timezone"]))
+
+    if time_to is None:
+        td_duration = parse_duration(duration)
+        dt_stop = dt_start + td_duration
+    else:
+        dt_stop = datetime.combine(dt,
+                                   datetime.strptime(time_to, "%H:%M").time(),
+                                   tzinfo=ZoneInfo(config["user"]["timezone"]))
+        if dt_stop - dt_start != td_duration and td_duration is not None:
+            cprint("[!] You've specified time and duration. Sure you can do so, but they don't add up.", "red")
+            cprint(f"    From {dt_start} to {dt_stop} doesn't equal {td_duration}", "cyan")
+            sys.exit(2)
 
 
-def get_labels():
-    # TODO: Prettify output
-    labels = requests.get(
-        "https://api.timelyapp.com/1.1/{}/labels".format(config["org"]["id"]), 
-        headers=HEADERS,
-        timeout=10
-    ).json()
-    for item in labels:
-        recurseprint(item, "name", "children", 0)
-
-def log_time(note, duration, date_iso):
-    # TODO: Add time support (From/To)
-    dt = datetime.strptime(date_iso, "%Y-%m-%d")
-    dt_start = dt.replace(
-        hour=config["prefs"]["staringHour"],
-        minute=0,
-        second=0,
-        microsecond=0,
-        tzinfo=pytz.timezone('Europe/Kyiv')
-    )
-    dt_stop = dt_start + timedelta(hours=duration)
-    timestamp_start = dt_start.strftime("%Y-%m-%dT%H:%M:%S.000")
-    timestamp_stop = dt_stop.strftime("%Y-%m-%dT%H:%M:%S.000")
+    timestamp_start = dt_start.strftime("%Y-%m-%dT%H:%M:%S.000%z")
+    timestamp_stop = dt_stop.strftime("%Y-%m-%dT%H:%M:%S.000%z")
 
     data = {
       "event": {
@@ -115,6 +134,9 @@ def log_time(note, duration, date_iso):
         "user_id": config["user"]["id"]
       }
     }
+    #print(f'https://app.timelyapp.com/{config["org"]["id"]}/hours')
+    #print(data["event"]["from"])
+    #print(data["event"]["to"])
     response = requests.post(f'https://app.timelyapp.com/{config["org"]["id"]}/hours',
                              json=data,
                              headers=HEADERS,
@@ -127,7 +149,7 @@ def log_time(note, duration, date_iso):
         print(f'Status code: {response.status_code}')
         print(response.content)
 
-def show_time(iso_from, iso_to):
+def show_time(iso_from, iso_to, plain):
     """
     api returns 
         .[day].day - ISO day str
@@ -154,7 +176,10 @@ def show_time(iso_from, iso_to):
     if response.status_code == 200:
         # TODO: Prepare data for calendar
         # TODO: Make calendar print data properly
-        curses.wrapper(curses_cal)
+        if plain:
+            cprint("Calendar data should be here sometime")
+        else:
+            curses.wrapper(curses_cal)
     else:
         cprint('Error during request, see content below', "red")
         print(f'Status code: {response.status_code}')
@@ -167,23 +192,59 @@ def show_time(iso_from, iso_to):
 config = init()
 
 parser = argparse.ArgumentParser(description="Timely CLI")
-parser.add_argument("action", choices=["me", "log", "list", "fix", "cover", "tags", "config", "show"])
+parser.add_argument("action", choices=[
+    "me", 
+    "log", 
+    "fix", 
+    "cover", 
+    "tags", 
+    "projects",
+    "ping",
+    "show",
+])
 parser.add_argument("--note", help="Log note", default="")
-parser.add_argument("--duration", help="Duration in h(ours) or m(minutes)", default="6h")
+parser.add_argument("--duration", help="Duration in h(ours) or m(minutes)", default=None)
 parser.add_argument("--day", help="Day in ISO format (2024-12-31)", default="")
 parser.add_argument("--iso-from", help="Day in ISO format, from which show hours", default="")
 parser.add_argument("--iso-to", help="Day in ISO format, to which show hours", default="")
-
+parser.add_argument("--time-from", help="Starting time of record, 24h format (9:30, 15:45, 16:20)", default=None)
+parser.add_argument("--time-to", help="Ending time of record, 24h format", default=None)
+parser.add_argument("--plain", help="Dump the goods to STDOUT, no curses", action='store_true', default=False)
+parser.add_argument("--json", help="JSON output", action='store_true', default=False)
 args = parser.parse_args()
-unit = args.duration[-1]
-amount = int(args.duration[:-1])
 
 if args.action == "me":
     get_me()
+
 elif args.action == "log":
-    # TODO: Add From and To with time parse
-    log_time(args.note, amount, args.day)
+    if args.duration is None and (args.time_from is None or args.time_to is None):
+        cprint("[!] Psychics are on a coffee break", "red")
+        cprint("No duration and vague/none time specified.", "cyan")
+        sys.exit(2)
+    log_time(args.note, args.duration, args.day, args.time_from, args.time_to)
+
 elif args.action == "tags":
-    get_labels()
+    get_tags(config["org"]["id"], plain=args.plain)
+elif args.action == "projects":
+    get_projects(config["org"]["id"], plain=args.plain)
+
+elif args.action == "ping":
+    ping = requests.get(
+        "https://app.timelyapp.com/{}/assets/revision.json".format(config["org"]["id"]),
+        headers=HEADERS,
+        timeout=10
+    )
+    if 200 <= ping.status_code < 400:
+        cprint(f"Pong. {ping.status_code}", "cyan")
+    else:
+        cprint(f"No pong. {ping.status_code}", "red")
+        sys.exit(1)
+
 elif args.action == "show":
-    show_time(args.iso_from, args.iso_to)
+    if args.iso_from == "":
+        cprint("--iso-from flag missing", "red")
+        sys.exit(2)
+    if args.iso_to == "":
+        cprint("--iso-to flag missing", "red")
+        sys.exit(2)
+    show_time(args.iso_from, args.iso_to, args.plain)

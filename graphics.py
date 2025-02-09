@@ -1,4 +1,10 @@
 import curses
+from datetime import datetime, timedelta
+import calendar
+
+
+# Example tracking data (Day: Hours Tracked)
+tracking_data = {1: 8, 2: 4, 3: 6, 5: 1, 8: 7, 12: 3, 15: 2, 18: 0, 20: 5}
 
 def get_fill_char(hours):
     """Determine fill level based on hours tracked"""
