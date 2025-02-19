@@ -112,8 +112,8 @@ def log_time(note, duration, date_iso, time_from=None, time_to=None):
             "entry_ids": []
           }
         ],
-        "hours": duration,
-        "minutes": 0,
+        "hours": td_duration.seconds // 3600,
+        "minutes": (td_duration.seconds % 3600) // 60,
         "seconds": 0,
         "estimated_hours": 0,
         "estimated_minutes": 0,

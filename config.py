@@ -79,7 +79,8 @@ def init():
             "user": {
                 "email": user["email"],
                 "id": user["id"],
-                "weeklyCapacity": user["weekly_capacity"]
+                "weeklyCapacity": user["weekly_capacity"],
+                "timezone": user["time_zone"]
             },
             "org":{
                 "name": org_name,
