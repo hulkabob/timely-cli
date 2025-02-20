@@ -21,6 +21,31 @@ Yes, it is a pain, but that's the only feasible way I've managed to get this pie
 
 Token Lifetime: TBA, still counting.
 
+## Usage
+```
+usage: timely [-h] [--note NOTE] [--duration DURATION] [--day DAY] [--iso-from ISO_FROM] [--iso-to ISO_TO] [--time-from TIME_FROM]
+              [--time-to TIME_TO] [--plain] [--json]
+              {me,log,fix,cover,tags,projects,ping,show}
+
+Timely CLI
+
+positional arguments:
+  {me,log,fix,cover,tags,projects,ping,show}
+
+options:
+  -h, --help            show this help message and exit
+  --note NOTE           Log note
+  --duration DURATION   Duration in h(ours) or m(minutes)
+  --day DAY             Day in ISO format (2024-12-31)
+  --iso-from ISO_FROM   Day in ISO format, from which show hours
+  --iso-to ISO_TO       Day in ISO format, to which show hours
+  --time-from TIME_FROM
+                        Starting time of record, 24h format (9:30, 15:45, 16:20)
+  --time-to TIME_TO     Ending time of record, 24h format
+  --plain               Dump the goods to STDOUT, no curses
+  --json                JSON output
+```
+
 ## Configs
 
 
