@@ -57,6 +57,7 @@ Show filled-in days (placeholder data temporarily)
 ```bash
 ./timely show --iso-from 2025-02-10 --iso-to 2025-02-20
 ```
+N.B.: Dates input is mostly in ISO format, like in GNU `date -I`
 
 Add a memory of you working for one hour on some specific task:
 ```bash
