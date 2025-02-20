@@ -46,6 +46,24 @@ options:
   --json                JSON output
 ```
 
+## Examples
+
+Show data about current user (dumps JSON from timely)
+```bash
+./timely me
+```
+
+Show filled-in days (placeholder data temporarily)
+```bash
+./timely show --iso-from 2025-02-10 --iso-to 2025-02-20
+```
+
+Add a memory of you working for one hour on some specific task:
+```bash
+./timely log --day 2025-02-20 --note "Doing some very specific task" --time-from 10:00 --duration 1h
+```
+
+
 ## Configs
 
 
